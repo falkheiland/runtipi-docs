@@ -1,0 +1,126 @@
+# User configs
+
+## About
+
+This article will list practical examples of user-configs for apps. It is assumed you already understand the meaning and creation of user configs. See the [customize-app-config](/docs/getting-started/customize-app-config) section for more information.
+
+## Apps
+
+### runtipi
+
+#### config 1
+
+- stop exposing the tipi portal on any Url other than the configured one.
+- only use the cert receiver on `DOMAIN` exposed routers
+- applying middlewares (must be configured separate)
+- exposes the traefik dashboard on port 8080
+- set volumes for a customized traefik configuration (not included in this section)
+
+runtipi/user-config/tipi-compose.yml:
+
+```yml
+version: '3.9'
+
+# works with runtipi >= v3.1.1
+services:
+  runtipi:
+    labels:
+      # Dashboard Local ip
+      traefik.http.routers.dashboard-local.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/`)
+      # Dashboard Exposed
+      traefik.http.routers.dashboard-exposed.rule: Host(`${DOMAIN}`) && PathPrefix(`/`)
+      traefik.http.routers.dashboard-exposed.entrypoints: websecure
+      traefik.http.routers.dashboard-exposed.tls.certresolver: myresolver
+      traefik.http.routers.dashboard-exposed.service: dashboard
+      traefik.http.routers.dashboard-exposed.middlewares: authentik@file, geoblock@file
+
+      # Worker Local ip
+      traefik.http.routers.worker-local.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker`)
+      # Worker Exposed
+      traefik.http.routers.worker-exposed.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker`)
+      traefik.http.routers.worker-exposed.entrypoints: websecure
+      traefik.http.routers.worker-exposed.service: worker
+      traefik.http.routers.worker-exposed.middlewares: authentik@file, geoblock@file
+
+      # Worker API Local ip
+      traefik.http.routers.worker-api-local.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker-api`)
+      # Worker API Exposed
+      traefik.http.routers.worker-api-exposed.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker-api`)
+      traefik.http.routers.worker-api-exposed.entrypoints: websecure
+      traefik.http.routers.worker-api-exposed.service: worker
+      traefik.http.routers.worker-api-exposed.middlewares: authentik@file, geoblock@file
+
+  runtipi-reverse-proxy:
+    ports:
+      - 8080:8080
+    volumes:
+      - ./app-data/traefik:/etc/traefik
+      - ./app-data/traefik/shared:/shared
+      - /var/log/traefik/:/var/log/
+```
+
+### 2fauth
+
+#### config 1
+
+- changes the used URL to the `LOCAL_DOMAIN` (default `APP_DOMAIN`)
+
+runtipi/user-config/2fauth/docker-compose.yml
+
+```yml
+version: "3.7"
+services:
+  2fauth:
+    environment:
+      - ASSET_URL=https://2fauth.${LOCAL_DOMAIN}
+      - APP_URL=https://2fauth.${LOCAL_DOMAIN}
+
+```
+
+### authentik
+
+#### config 1
+
+- adds a geonlock middleware (must be configured separate)
+- adds a backend network (only accesible inside the stack)
+- adds a db-backup service
+
+runtipi/user-config/authentik/docker-compose.yml
+
+```yml
+version: "3.7"
+
+services:
+  authentik:
+    labels:
+      # Websecure
+      traefik.http.routers.authentik.middlewares: geoblock@file
+
+  authentik-db:
+    networks:
+      - backend_network
+
+  dbbackup:
+    image: tiredofit/db-backup:4.0.34
+    container_name: authentik-db-backup
+    environment:
+      - DEFAULT_COMPRESSION=GZ
+      - DB01_TYPE=pgsql
+      - DB01_HOST=authentik-db
+      - DB01_NAME=authentik
+      - DB01_USER=authentik
+      - DB01_PASS=${AUTHENTIK_DB_PASSWORD}
+      - CONTAINER_ENABLE_MONITORING=FALSE
+      - DEFAULT_CLEANUP_TIME=1440
+    restart: unless-stopped
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${APP_DATA_DIR}/data/db-backup:/backup
+    depends_on:
+      - authentik-db
+    networks:
+      - backend_network
+
+networks:
+  backend_network:
+```
