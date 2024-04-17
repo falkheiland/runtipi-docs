@@ -4,32 +4,85 @@
 
 This article will list practical examples of user-configs. It is assumed you already understand the meaning and creation of user configs. See the [customize-app-config](/docs/getting-started/customize-app-config) section for more information.
 
-## runtipi
+This document assumes the tipi installation was done in the user home dir `~/runtipi`. Changed settings get applied by restarting tipi `sudo ./runtipi-cli restart` or apps.
 
-### traefik
+<Callout>The informations in this article are based on runtipi v3.1.3</Callout>
 
-#### customized-traefik-config
+## runtipi services
 
-- make default traefik config writeable
-- make your own traefik config
+### runtipi-reverse-proxy (traefik)
 
-##### make traefik config writeable
+#### customize config
 
-##### make you own traefik config
+When (re)starting runtipi, the runtipi configs will be reset to their defaults. To make persistent changes to those settings you have the 2 options [change config persistence](#change-config-persistence) or use a [custom traefik config](#custom-traefik-config):
 
+##### change config persistence
+
+By changing the default value of `persistTraefikConfig` from `true` to `false`, changes made to the files inside `~/runtipi/traefik` will persist after (re)starting runtipi.
+
+[custom-settings](/docs/getting-started/custom-settings#available-settings)
+
+~/runtipi/state/settings.json:
+
+```json
+{
+  ...
+  "persistTraefikConfig":false
+}
 ```
+
+##### use a custom traefik config
+
+By creating a `~/runtipi/user-config/tipi-compose.yml` and defining custom volumes for a traefik configuration, you can avoid touching the original configuration. This will preserve your settings in case of changes made by runtipi during an update. You will possibly have to adjust settings if runtipi updates changes configurations.
+
+<Callout type="info">This is the option that is used for examples in that document.</Callout>
+
+Commands that will create and apply customized copy of the original traefik configuration:
+
+```bash
 cd ~/runtipi
 sudo ./runtipi-cli stop
-# stop all containers (optional)
-docker stop $(docker ps -a -q)
+docker stop $(docker ps -a -q) # stop all containers (optional)
 mkdir -p app-data/traefik/etc
 mkdir -p app-data/traefik/shared
 cp -R cp traefik/dynamic traefik/tls traefik/traefik.yml app-data/traefik/etc
 cp -R cp traefik/shared app-data/traefik
-touch user-config/tipi-compose.yml
+vim user-config/tipi-compose.yml
 ```
 
-user-config/tipi-compose.yml:
+The created folder structure can be checked:
+
+```bash
+# tree ~/runtipi/app-data/traefik/
+.
+├── etc
+│   ├── dynamic
+│   │   └── dynamic.yml
+│   ├── tls
+│   │   ├── cert.pem
+│   │   └── key.pem
+│   └── traefik.yml
+└── shared
+    └── acme.json
+```
+
+<FileTree>
+  <FileTree.Folder name="etc" defaultOpen>
+    <FileTree.Folder name="dynamic" defaultOpen>
+      <FileTree.File name="dynamic.yml" />
+    </FileTree.Folder>
+    <FileTree.Folder name="tls" defaultOpen>
+      <FileTree.File name="cert.pem" />
+      <FileTree.File name="key.pem" />
+    </FileTree.Folder>
+    <FileTree.File name="traefik.yml" />
+  </FileTree.Folder>
+  <FileTree.Folder name="shared" defaultOpen>
+    </FileTree.File name="acme.json">
+  </FileTree.Folder>
+</FileTree>
+
+Make entries to `~/runtipi/user-config/tipi-compose.yml` to apply the custom settings:
 
 ```yml
 version: '3.9'
@@ -40,30 +93,17 @@ services:
       - ./app-data/traefik/shared:/shared
 ```
 
-```bash
-~/runtipi/app-data/traefik$ tree
-.
-├── etc
-│   ├── dynamic
-│   │   └── dynamic.yml
-│   ├── tls
-│   │   ├── cert.pem
-│   │   ├── key.pem
-│   └── traefik.yml
-└── shared
-    └── acme.json
-```
+Start runtipi:
 
-```
+```bash
 sudo ./runtipi-cli start
 ```
-#### expose traefik dashboard
 
-- tested with runtipi v3.1.3
+#### dashboard exposure
 
 http://`${INTERNAL_IP}`:8080
 
-runtipi/user-config/tipi-compose.yml:
+~/runtipi/user-config/tipi-compose.yml:
 
 ```yml
 version: '3.9'
@@ -72,10 +112,12 @@ services:
     ports:
       - 8080:8080
 ```
-#### logrotate traefik logs
 
-- required: [customized-traefik-config](#customized-traefik-config)
-- traefik logs will not be available in apps like dozzle or portainer!
+#### log rotation
+
+<Callout type="info">[custom traefik config](#custom-traefik-config)</Callout>
+
+<Callout type="warning">traefik logs will not be available in apps like dozzle or portainer!</Callout>
 
 ```bash
 mkdir /var/log/traefik
@@ -96,7 +138,7 @@ sudo vim /etc/logrotate.d/traefik
 }
 ```
 
-runtipi/user-config/tipi-compose.yml:
+~/runtipi/user-config/tipi-compose.yml:
 
 ```yml
 version: '3.9'
@@ -106,7 +148,7 @@ services:
       - /var/log/traefik/:/var/log/
 ```
 
-runtipi/app-data/traefik/etc/traefik.yml:
+~/runtipi/app-data/traefik/etc/traefik.yml:
 
 ```yml
 log:
@@ -119,14 +161,124 @@ accessLog:
 
 ### runtipi
 
-#### routers
+#### traefik-plugin-geoblock
 
-- tested with runtipi v3.1.3
-- stop exposing the tipi portal on any Url other than the configured one.
-- only use the cert receiver on `DOMAIN` exposed routers
-- applying middlewares (must be configured separate)
+Traefik plugin to whitelist requests based on geolocation.
 
-runtipi/user-config/tipi-compose.yml:
+<https://github.com/nscuro/traefik-plugin-geoblock>
+
+<Callout type="info">[custom traefik config](#custom-traefik-config)</Callout>
+
+Download and place plugin files:
+
+```bash
+cd ~/runtipi/app-data/traefik
+mkdir -p plugins-local/src/github.com/nscuro/traefik-plugin-geoblock/
+cd plugins-local/src/github.com/nscuro/traefik-plugin-geoblock/
+wget https://github.com/nscuro/traefik-plugin-geoblock/releases/download/v0.14.0/traefik-plugin-geoblock-0.14.0.tar.gz
+tar -xzvf traefik-plugin-geoblock-0.14.0.tar.gz
+```
+
+Define plugin:
+
+~/runtipi/app-data/traefik/etc/traefik.yml
+
+```yml
+experimental:
+  plugins:
+    traefik-plugin-geoblock:
+      moduleName: "github.com/nscuro/traefik-plugin-geoblock"
+      version: "v0.14.0"
+```
+
+Define middleware:
+
+~/runtipi/app-data/traefik/etc/dynamic/dynamic.yml:
+
+```yml
+http:
+  middlewares:
+    geoblock:
+      plugin:
+        traefik-plugin-geoblock:
+          # Enable this plugin?
+          enabled: true
+          # Path to ip2location database file
+          databaseFilePath: /plugins-local/src/github.com/nscuro/traefik-plugin-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN
+          # Whitelist of countries to allow (ISO 3166-1 alpha-2)
+          allowedCountries: [ "DE" ]
+          # Blocklist of countries to block (ISO 3166-1 alpha-2)
+          # blockedCountries: [ "RU" ]
+          # Default allow indicates that if an IP is in neither block list nor allow lists, it should be allowed.
+          defaultAllow: false
+          # Allow requests from private / internal networks?
+          allowPrivate: true
+          # HTTP status code to return for disallowed requests (default: 403)
+          disallowedStatusCode: 204
+          # Add CIDR to be whitelisted, even if in a non-allowed country
+          # allowedIPBlocks: ["66.249.64.0/19"]
+          # Add CIDR to be blacklisted, even if in an allowed country or IP block
+          # blockedIPBlocks: ["66.249.64.5/32"]
+```
+
+Set plugin volume and apply middleware:
+
+~/runtipi/user-config/tipi-compose.yml:
+
+```yml
+version: '3.9'
+services:
+  runtipi-reverse-proxy:
+    volumes:
+      - ./app-data/traefik/plugins-local:/plugins-local
+
+  runtipi:
+    labels:
+      # ---- General ----- #
+
+      # ---- Dashboard ----- #
+      # Websecure
+      traefik.http.routers.dashboard-secure.middlewares: geoblock@file
+
+      # ---- Worker ----- #
+      # Websecure
+      traefik.http.routers.worker-api-secure.middlewares: geoblock@file
+```
+
+#### authentik middleware
+
+<Callout type="info">[custom traefik config](#custom-traefik-config)</Callout>
+
+For use with proxy provider in authentik
+
+Define middleware:
+
+~/runtipi/app-data/traefik/etc/dynamic/dynamic.yml:
+
+```yml
+http:
+  middlewares:
+    authentik:
+      forwardAuth:
+        address: http://authentik:9000/outpost.goauthentik.io/auth/traefik
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+          - X-authentik-name
+          - X-authentik-uid
+          - X-authentik-jwt
+          - X-authentik-meta-jwks
+          - X-authentik-meta-outpost
+          - X-authentik-meta-provider
+          - X-authentik-meta-app
+          - X-authentik-meta-version
+```
+
+Apply middleware:
+
+~/runtipi/user-config/tipi-compose.yml:
 
 ```yml
 version: '3.9'
@@ -136,43 +288,21 @@ services:
       # ---- General ----- #
 
       # ---- Dashboard ----- #
-      # Local ip
-      traefik.http.routers.dashboard.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/`)
       # Websecure
-      traefik.http.routers.dashboard-secure.middlewares: authentik@file, geoblock@file
+      traefik.http.routers.dashboard-secure.middlewares: authentik@file
 
       # ---- Worker ----- #
-      # Local ip
-      traefik.http.routers.worker.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker`)
       # Websecure
-      traefik.http.routers.worker-insecure.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker`)
-      traefik.http.routers.worker-secure.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker`)
-      traefik.http.routers.worker-secure.middlewares: authentik@file, geoblock@file
-      traefik.http.routers.worker-api-insecure.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker-api`)
-      traefik.http.routers.worker-api-secure.rule: Host(`${DOMAIN}`) && PathPrefix(`/worker-api`)
-      traefik.http.routers.worker-api-secure.middlewares: authentik@file, geoblock@file
-      # Local domain
-      traefik.http.routers.worker-local-insecure.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker`)
-      traefik.http.routers.worker-api-local-insecure.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker-api`)
-      # Secure
-      traefik.http.routers.worker-local.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker`)
-      traefik.http.routers.worker-api-local.rule: (Host(`${INTERNAL_IP}`) || Host(`tipi.${LOCAL_DOMAIN}`)) && PathPrefix(`/worker-api`)
+      traefik.http.routers.worker-api-secure.middlewares: authentik@file
 ```
+
 ## Apps
-
-### general
-
-#### config 1
-
-
 
 ### 2fauth
 
-#### config 1
+#### changes the used URL to the `LOCAL_DOMAIN` (default `APP_DOMAIN`)
 
-- changes the used URL to the `LOCAL_DOMAIN` (default `APP_DOMAIN`)
-
-runtipi/user-config/2fauth/docker-compose.yml
+~/runtipi/user-config/2fauth/docker-compose.yml
 
 ```yml
 version: "3.7"
@@ -186,13 +316,13 @@ services:
 
 ### authentik
 
-#### config 1
+#### geoblock, db-backupobackend network
 
-- adds a geonlock middleware (must be configured separate)
+- adds a geoblock middleware (must be configured separate)
 - adds a backend network (only accesible inside the stack)
 - adds a db-backup service
 
-runtipi/user-config/authentik/docker-compose.yml
+~/runtipi/user-config/authentik/docker-compose.yml
 
 ```yml
 version: "3.7"
