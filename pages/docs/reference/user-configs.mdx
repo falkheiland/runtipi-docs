@@ -24,8 +24,9 @@ sudo ./runtipi-cli stop
 docker stop $(docker ps -a -q)
 mkdir -p app-data/traefik/etc
 mkdir -p app-data/traefik/shared
-cp -R cp traefik/dynamic traefik/tls traefik/traefik.yml app-data/traefik/etc
-cp -R cp traefik/shared app-data/traefik
+sudo cp -R traefik/dynamic traefik/tls traefik/traefik.yml app-data/traefik/etc
+sudo cp -R traefik/shared app-data/traefik
+sudo chown -R user:user traefik/
 touch user-config/tipi-compose.yml
 ```
 
